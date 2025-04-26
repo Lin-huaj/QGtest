@@ -1,0 +1,106 @@
+import static org.mockito.Mockito.*;
+import static org.junit.Assert.*;
+
+import com.pojo.User;
+import com.service.UserService;
+import org.junit.Before;
+import org.junit.Test;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+import javax.servlet.RequestDispatcher;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.sql.SQLException;
+import java.util.Collections;
+
+public class RegisterServletTest {
+
+    @Mock
+    private HttpServletRequest request;
+    @Mock
+    private HttpServletResponse response;
+    @Mock
+    private RequestDispatcher dispatcher;
+    @Mock
+    private UserService userService;
+
+    private RegisterServlet registerServlet;
+
+    @Before
+    public void setUp() {
+        MockitoAnnotations.openMocks(this);
+        registerServlet = new RegisterServlet();
+        registerServlet.userService = userService; // 注入模拟的UserService
+    }
+
+    // ------------------------- 测试场景1：注册成功 -------------------------
+    @Test
+    public void testDoPost_Success() throws Exception {
+        // 模拟请求参数
+        when(request.getParameter("nickname")).thenReturn("newuser");
+        when(request.getParameter("password")).thenReturn("123456");
+        when(request.getParameter("email")).thenReturn("new@example.com");
+        when(request.getParameter("phone")).thenReturn("13800138000");
+        when(request.getParameter("studentId")).thenReturn("2023001");
+
+        // 模拟UserService行为：用户名不存在，插入成功
+        when(userService.findByUsername("newuser")).thenReturn(Collections.emptyList());
+        when(userService.addUser(any(User.class))).thenReturn(1);
+
+        // 执行Servlet的doPost方法
+        registerServlet.doPost(request, response);
+
+        // 验证：跳转到登录页
+        verify(response).sendRedirect("login.jsp");
+    }
+
+    // ------------------------- 测试场景2：用户名已存在 -------------------------
+    @Test
+    public void testDoPost_DuplicateUsername() throws Exception {
+        // 模拟请求参数
+        when(request.getParameter("nickname")).thenReturn("existinguser");
+        when(request.getParameter("password")).thenReturn("123456");
+        when(request.getRequestDispatcher("register.jsp")).thenReturn(dispatcher);
+
+        // 模拟UserService行为：用户名已存在
+        User existingUser = new User();
+        when(userService.findByUsername("existinguser")).thenReturn(Collections.singletonList(existingUser));
+
+        // 执行Servlet的doPost方法
+        registerServlet.doPost(request, response);
+
+        // 验证：返回错误信息并转发回注册页
+        verify(request).setAttribute("error", "用户名已存在");
+        verify(dispatcher).forward(request, response);
+    }
+
+    // ------------------------- 测试场景3：数据库异常 -------------------------
+    @Test
+    public void testDoPost_DatabaseError() throws Exception {
+        // 模拟请求参数
+        when(request.getParameter("nickname")).thenReturn("testuser");
+        when(request.getParameter("password")).thenReturn("123456");
+        when(request.getRequestDispatcher("register.jsp")).thenReturn(dispatcher);
+
+        // 模拟UserService抛出异常
+        when(userService.findByUsername("testuser")).thenThrow(new SQLException("Database error"));
+
+        // 执行Servlet的doPost方法
+        registerServlet.doPost(request, response);
+
+        // 验证：返回系统错误信息
+        verify(request).setAttribute("error", "系统错误，请联系管理员");
+        verify(dispatcher).forward(request, response);
+    }
+
+    // ------------------------- 测试场景4：密码加密验证 -------------------------
+    @Test
+    public void testPasswordHashing() {
+        String rawPassword = "123456";
+        String hashedPassword = BCrypt.hashpw(rawPassword, BCrypt.gensalt());
+
+        // 验证密码是否被正确哈希
+        assertTrue(BCrypt.checkpw(rawPassword, hashedPassword));
+    }
+}
